@@ -1,0 +1,16 @@
+{
+  "name": "kurs",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --minify",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "hono": "^4.9.1"
+  },
+  "devDependencies": {
+    "wrangler": "^4.4.0"
+  }
+}
