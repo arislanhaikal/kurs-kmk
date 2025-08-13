@@ -9,16 +9,32 @@ const app = new Hono();
 
 app.use("*", poweredBy(), prettyJSON(), trimTrailingSlash());
 
-app.get('/', async (c) => {
-  const data = await scrapeData('https://fiskal.kemenkeu.go.id/informasi-publik/kurs-pajak');
-  return c.json(data);
-})
+const CACHE_MAX_AGE = 300; // 5 minutes
 
-app.get('/:date', async (c) => {
-  const date = c.req.param("date");
-  const data = await scrapeData(`https://fiskal.kemenkeu.go.id/informasi-publik/kurs-pajak?date=${date}`);
-  return c.json(data);
-})
+app.get(
+  '/',
+  cache({
+    cacheName: 'kurs',
+    cacheControl: `max-age=${CACHE_MAX_AGE}`,
+  }),
+  async (c) => {
+    const data = await scrapeData('https://fiskal.kemenkeu.go.id/informasi-publik/kurs-pajak');
+    return c.json(data);
+  }
+);
+
+app.get(
+  '/:date',
+  cache((c) => ({
+    cacheName: `kurs-date-${c.req.param("date")}`,
+    cacheControl: `max-age=${CACHE_MAX_AGE}`,
+  })),
+  async (c) => {
+    const date = c.req.param("date");
+    const data = await scrapeData(`https://fiskal.kemenkeu.go.id/informasi-publik/kurs-pajak?date=${date}`);
+    return c.json(data);
+  }
+);
 
 type TableRow = {
   title?: string;
@@ -28,27 +44,22 @@ type TableRow = {
 
 async function scrapeData(url: string) {
   try {
-      const response = await fetch(url);
-      const html = await response.text();
-      const $ = cheerio.load(html);
-      const title = $('em').text();
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const html = await response.text();
+    const $ = cheerio.load(html);
+    const title = $('em').text();
 
-      const datas: TableRow[] = [];
-      $('.table-responsive > table tbody tr').each((i, row) => {
-          const rowData: TableRow = {};
-          $(row).find('td').each((j, cell) => {
-              // Create an object for each row with title and value properties
-              if (j === 1) {
-                rowData.title = $(cell).find('span').first().text().trim();
-                rowData.currency = $(cell).find('span').last().text().trim();
-              } else if (j === 2) {
-                rowData.value = Number.parseFloat(
-                  $(cell).text().trim().replace(/\./g, '').replace(',', '.')
-                );
-              }
-          });
-          datas.push(rowData);
-      });
+    const datas: TableRow[] = $('.table-responsive > table tbody tr').map((_, row) => {
+      const tds = $(row).find('td');
+      return {
+        title: tds.eq(1).find('span').first().text().trim(),
+        currency: tds.eq(1).find('span').last().text().trim(),
+        value: Number.parseFloat(
+          tds.eq(2).text().trim().replace(/\./g, '').replace(',', '.')
+        ),
+      };
+    }).get();
 
     return { title, datas };
   } catch (error) {
@@ -57,4 +68,4 @@ async function scrapeData(url: string) {
   }
 }
 
-export default app
+export default app;
